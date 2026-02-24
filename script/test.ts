@@ -5,110 +5,382 @@ import path from "path";
 
 ffmpeg.setFfmpegPath(ffmpegPath as string);
 
-function addTextToVideo() {
-  console.log("add text to video");
+type TextOverlay = {
+  text: string;
+  start: number;
+  end: number;
+  x?: string;
+  y?: string;
+  fontSize?: number;
+  fontColor?: string;
+  fontPath: string;
+  animation?: Animation;
+};
 
-  const videoPath = path.resolve("public/test.mp4");
-  const fontPath = path.resolve("public/test.ttf").replace(/\\/g, "\\\\");
-  const datetime = Date.now();
+type ImageOverlay = {
+  imagePath: string;
+  start: number;
+  end: number;
+  x?: string;
+  y?: string;
+  width?: number; // optional scaling
+  animation?: Animation;
+};
 
-  return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
-      .videoFilters([
-        "fade=t=out:st=9:d=1",
-        `drawtext=text='Lorem Ipsum Dolor Sit Amet':fontfile='${fontPath}':fontsize=100:fontcolor=white:x=(w-text_w)/2:y=h-850:alpha='if(lt(t,3),0,if(lt(t,4),(t-3)/1,if(lt(t,6),1,if(lt(t,7),(7-t)/1,0))))'`,
-      ])
-      //   .save(`video_with_text-${datetime}.mp4`)
-      .save("video_with_text.mp4")
-      .on("end", resolve)
-      .on("error", reject);
-  });
-}
+type VideoOverlayOptions = {
+  videoPath: string;
+  outputPath: string;
+  texts?: TextOverlay[];
+  images?: ImageOverlay[];
+};
 
-function imageToVideo() {
-  console.log("image to video");
+type AnimationType =
+  | "fade"
+  | "slide-up"
+  | "slide-down"
+  | "slide-left"
+  | "slide-right"
+  | "zoom-in"
+  | "zoom-out"
+  | "none";
 
-  const imagePath = path.resolve("public/test.jpg");
-  const datetime = Date.now();
+type PhaseAnim = {
+  type: AnimationType;
+  duration: number;
+};
 
-  return new Promise((resolve, reject) => {
-    ffmpeg(imagePath)
-      .loop(5) // durasi video 5 detik
-      .fps(30)
-      .videoCodec("libx264") // h264
-      .outputOptions("-pix_fmt yuv420p")
-      .videoFilters(
-        "scale='min(iw,1920)':'min(ih,1080)':force_original_aspect_ratio=decrease," +
-          "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black," +
-          "fade=t=in:st=0:d=1",
-      )
-      //   .save(`image_video-${datetime}.mp4`)
-      .save("image_video.mp4")
-      .on("end", resolve)
-      .on("error", reject);
-  });
-}
+type Animation = {
+  in?: PhaseAnim;
+  hold?: number;
+  out?: PhaseAnim;
+};
 
-function mergeVideos() {
-  console.log("merge videos");
+function buildAnimation({
+  start,
+  animation,
+  isText = false,
+}: {
+  start: number;
+  animation?: Animation;
+  isText?: boolean;
+}) {
+  if (!animation) return {};
 
-  const listFile = "list.txt";
-  const video1 = "video_with_text.mp4";
-  const video2 = "image_video.mp4";
+  const W = isText ? "w" : "main_w";
+  const H = isText ? "h" : "main_h";
+  const OBJ_W = isText ? "text_w" : "overlay_w";
+  const OBJ_H = isText ? "text_h" : "overlay_h";
 
-  fs.writeFileSync(listFile, `file '${video1}'\nfile '${video2}'`);
+  const inDur = animation.in?.duration ?? 0;
+  const holdDur = animation.hold ?? 0;
+  const outDur = animation.out?.duration ?? 0;
 
-  return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(listFile)
-      .inputOptions(["-f concat", "-safe 0"])
-      .outputOptions(["-c copy"])
-      .save("final.mp4")
-      .on("end", resolve)
-      .on("error", reject)
-      .on("end", cleanup)
-      .on("error", cleanup);
+  const inEnd = start + inDur;
+  const holdEnd = inEnd + holdDur;
+  const outEnd = holdEnd + outDur;
 
-    function cleanup() {
-      [listFile, video1, video2].forEach((file) => {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
-          console.log(`Deleted ${file}`);
-        }
-      });
+  const centerX = `(${W}-${OBJ_W})/2`;
+  const centerY = `(${H}-${OBJ_H})/2`;
+
+  const result: any = {
+    enable: `between(t,${start},${outEnd})`,
+  };
+
+  // ======================
+  // FADE
+  // ======================
+  if (animation.in?.type === "fade" || animation.out?.type === "fade") {
+    const fadeIn =
+      animation.in?.type === "fade" && inDur > 0
+        ? `(t-${start})/${inDur}`
+        : "1";
+
+    const fadeOut =
+      animation.out?.type === "fade" && outDur > 0
+        ? `(${outEnd}-t)/${outDur}`
+        : "1";
+
+    result.alpha = `if(lt(t,${inEnd}),${fadeIn},if(lt(t,${holdEnd}),1,${fadeOut}))`;
+  }
+
+  // ======================
+  // SLIDE (CROSS AXIS SAFE)
+  // ======================
+  const slideTypes = ["slide-left", "slide-right", "slide-up", "slide-down"];
+
+  if (
+    slideTypes.includes(animation.in?.type as string) ||
+    slideTypes.includes(animation.out?.type as string)
+  ) {
+    const dirIn = animation.in?.type;
+    const dirOut = animation.out?.type;
+
+    // ======================
+    // X AXIS
+    // ======================
+    let xExpr = centerX;
+
+    const isXIn = dirIn === "slide-left" || dirIn === "slide-right";
+    const isXOut = dirOut === "slide-left" || dirOut === "slide-right";
+
+    if (isXIn || isXOut) {
+      let startX = centerX;
+      let endX = centerX;
+
+      if (dirIn === "slide-left") startX = W;
+      if (dirIn === "slide-right") startX = `(-${OBJ_W})`;
+
+      if (dirOut === "slide-left") endX = `(-${OBJ_W})`;
+      if (dirOut === "slide-right") endX = W;
+
+      const slideInX =
+        isXIn && inDur > 0
+          ? `${startX} + (t-${start})*(${centerX}-${startX})/${inDur}`
+          : centerX;
+
+      const slideOutX =
+        isXOut && outDur > 0
+          ? `${centerX} + (t-${holdEnd})*(${endX}-${centerX})/${outDur}`
+          : centerX;
+
+      xExpr =
+        `if(lt(t,${inEnd}),${slideInX},` +
+        `if(lt(t,${holdEnd}),${centerX},${slideOutX}))`;
+
+      result.x = xExpr;
     }
-  });
+
+    // ======================
+    // Y AXIS
+    // ======================
+    let yExpr = centerY;
+
+    const isYIn = dirIn === "slide-up" || dirIn === "slide-down";
+    const isYOut = dirOut === "slide-up" || dirOut === "slide-down";
+
+    if (isYIn || isYOut) {
+      let startY = centerY;
+      let endY = centerY;
+
+      if (dirIn === "slide-up") startY = H;
+      if (dirIn === "slide-down") startY = `-${OBJ_H}`;
+
+      if (dirOut === "slide-up") endY = `-${OBJ_H}`;
+      if (dirOut === "slide-down") endY = H;
+
+      const slideInY =
+        isYIn && inDur > 0
+          ? `${startY} + (t-${start})*(${centerY}-${startY})/${inDur}`
+          : centerY;
+
+      const slideOutY =
+        isYOut && outDur > 0
+          ? `${centerY} + (t-${holdEnd})*(${endY}-${centerY})/${outDur}`
+          : centerY;
+
+      yExpr =
+        `if(lt(t,${inEnd}),${slideInY},` +
+        `if(lt(t,${holdEnd}),${centerY},${slideOutY}))`;
+
+      result.y = yExpr;
+    }
+  }
+
+  // ======================
+  // ZOOM SUPPORT
+  // ======================
+  if (animation.in?.type === "zoom-in" || animation.out?.type === "zoom-in") {
+    result.scale = `
+      if(lt(t,${inEnd}),
+         0.5 + (t-${start})*(0.5/${inDur}),
+      if(lt(t,${holdEnd}),
+         1,
+         1 - (t-${holdEnd})*(0.5/${outDur})
+      ))
+    `;
+  }
+
+  return result;
 }
 
-function addAudioToVideo() {
-  console.log("add audio to video");
-
-  const audioPath = path.resolve("public/test.mp3").replace(/\\/g, "/");
-  const videoPath = path.resolve("final.mp4").replace(/\\/g, "/");
-  const datetime = Date.now();
+function addTextAndImageToVideo({
+  videoPath,
+  outputPath,
+  texts = [],
+  images = [],
+}: VideoOverlayOptions) {
+  console.log("add text and image to video");
 
   return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
-      .input(audioPath)
-      .audioFilters([`afade=t=in:st=0:d=1`, `afade=t=out:st=14:d=1`])
-      .outputOptions([
-        "-c:v copy", // video tetap copy, tidak reencode
-        "-c:a aac", // audio convert ke AAC
-        "-map 0:v:0", // ambil video dari input pertama
-        "-map 1:a:0", // ambil audio dari input kedua
-        "-shortest", // optional: berhenti di durasi paling pendek
-      ])
-      .save(`final_banget_${datetime}.mp4`)
+    const command = ffmpeg(videoPath);
+
+    const complexFilters: any[] = [];
+    let lastVideoStream = "0:v";
+
+    // =========================
+    // IMAGE OVERLAYS
+    // =========================
+    images.forEach((img, idx) => {
+      command.input(img.imagePath);
+      const anim = buildAnimation({
+        start: img.start,
+        animation: img.animation,
+        isText: false,
+      });
+
+      const imageInputIndex = idx + 1; // karena 0 = video utama
+      let imageStream = `${imageInputIndex}:v`;
+
+      // Scaling (optional)
+      if (img.width) {
+        const scaledName = `scaled${idx}`;
+
+        complexFilters.push({
+          filter: "scale",
+          options: {
+            w: img.width,
+            h: -1, // auto
+          },
+          inputs: imageStream,
+          outputs: scaledName,
+        });
+
+        imageStream = scaledName;
+      }
+
+      const outputName = `v_img_${idx}`;
+
+      // img over video
+      const overlayOptions: any = {
+        x: anim.x ?? img.x ?? "(main_w-overlay_w)/2",
+        y: anim.y ?? img.y ?? "(main_h-overlay_h)/2",
+      };
+
+      if (anim.enable) {
+        overlayOptions.enable = anim.enable;
+      }
+
+      complexFilters.push({
+        filter: "overlay",
+        options: overlayOptions,
+        inputs: [lastVideoStream, imageStream],
+        outputs: outputName,
+      });
+
+      lastVideoStream = outputName;
+    });
+
+    // =========================
+    // TEXT OVERLAYS
+    // =========================
+    texts.forEach((txt, idx) => {
+      const anim = buildAnimation({
+        start: txt.start,
+        animation: txt.animation,
+        isText: true,
+      });
+      const outputName = `v_text_${idx}`;
+
+      const textOptions: any = {
+        text: txt.text,
+        fontfile: txt.fontPath.replace(/\\/g, "\\\\"),
+        fontsize: txt.fontSize ?? 48,
+        fontcolor: txt.fontColor ?? "white",
+        x: anim.x ?? txt.x ?? "(w-text_w)/2",
+        y: anim.y ?? txt.y ?? "h-200",
+      };
+
+      if (anim.enable) {
+        textOptions.enable = anim.enable;
+      }
+
+      if (anim.alpha) {
+        textOptions.alpha = anim.alpha;
+      }
+
+      complexFilters.push({
+        filter: "drawtext",
+        options: textOptions,
+        inputs: lastVideoStream,
+        outputs: outputName,
+      });
+
+      lastVideoStream = outputName;
+    });
+
+    // HD output
+    const scaledOutput = "final_scaled";
+
+    complexFilters.push({
+      filter: "scale",
+      options: {
+        w: 1920,
+        h: 1080,
+      },
+      inputs: lastVideoStream,
+      outputs: scaledOutput,
+    });
+
+    lastVideoStream = scaledOutput;
+
+    command
+      .complexFilter(complexFilters, lastVideoStream)
+      .outputOptions(["-pix_fmt yuv420p"])
+      .save(outputPath)
       .on("end", resolve)
       .on("error", reject);
   });
 }
 
 async function processVideo() {
-  await addTextToVideo();
-  await imageToVideo();
-  await mergeVideos();
-  await addAudioToVideo();
+  const outputPath = "final_video_18.mp4";
+  const videoPath = path.resolve("public/placeholder-video.mp4");
+  const imagePath = path.resolve("public/test.jpg");
+  const fontPath = path.resolve("public/test.ttf");
+  const datetime = Date.now();
+
+  const title = "Teruntuk Tiara Putri, mohon maaf lahir batin ya!";
+
+  const title2 = "Halo Tiara Putri, Selamat Hari Raya Idul Fitri!";
+  const subtitle1 =
+    "Di hari yang baik ini, aku ingin menyampaikan permohonan maaf lahir dan batin..";
+  const subtitle2 =
+    "Terutama untuk komunikasi yang sempat terputus dan silaturahmi kita yang jarang terjaga di tahun lalu.";
+  const subtitle3 =
+    "Harapanku, semoga ke depannya kita bisa mempererat tali silaturahmi kita dan lebih sering menyempatkan untuk bertemu.";
+
+  await addTextAndImageToVideo({
+    videoPath,
+    outputPath,
+    images: [
+      {
+        imagePath: imagePath,
+        start: 0,
+        end: 6,
+        width: 400,
+        animation: {
+          in: { type: "slide-right", duration: 1 },
+          hold: 2,
+          out: { type: "slide-right", duration: 5 },
+        },
+      },
+    ],
+    texts: [
+      {
+        text: title,
+        start: 0,
+        end: 4,
+        fontPath,
+        fontSize: 60,
+        y: "h-300",
+        animation: {
+          in: { type: "fade", duration: 1 },
+          hold: 2,
+          out: { type: "slide-left", duration: 1.5 },
+        },
+      },
+    ],
+  });
 
   console.log("Video selesai dibuat 🎉");
 }
