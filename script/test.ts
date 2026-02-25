@@ -10,6 +10,7 @@ type TextOverlay = {
   end: number;
   x?: string;
   y?: string;
+  textAlign?: "left" | "center" | "right";
   fontSize?: number;
   fontColor?: string;
   fontPath: string;
@@ -69,12 +70,14 @@ type Animation = {
 
 function buildSlideAndFadeAnim({
   start,
+  end,
   animation,
   isText = false,
   customX,
   customY,
 }: {
   start: number;
+  end: number;
   animation?: Animation;
   isText?: boolean;
   customX?: string; // <-- tambah
@@ -94,17 +97,25 @@ function buildSlideAndFadeAnim({
   const inEnd = start + inDur;
   const holdEnd = inEnd + holdDur;
   const outEnd = holdEnd + outDur;
+  const clampedEnd = Math.min(outEnd, end); // <-- pakai yang lebih kecil
 
   // Gunakan custom jika ada, fallback ke center
   const restX = customX ?? `(${W}-${OBJ_W})/2`;
   const restY = customY ?? `(${H}-${OBJ_H})/2`;
 
   const result: any = {
-    enable: `between(t,${start},${outEnd})`,
+    enable: `between(t,${start},${clampedEnd})`, // <-- pakai clampedEnd
   };
 
-  const progressIn = inDur > 0 ? `(t-${start})/${inDur}` : "1";
-  const progressOut = outDur > 0 ? `(t-${holdEnd})/${outDur}` : "1";
+  const progressOut =
+    outDur > 0
+      ? `max(0,min(1,(t-${holdEnd})/${outDur}))` // <-- clamp 0-1
+      : "1";
+
+  const progressIn =
+    inDur > 0
+      ? `max(0,min(1,(t-${start})/${inDur}))` // <-- clamp 0-1
+      : "1";
 
   const easedProgressIn = buildEasedProgress(
     progressIn,
@@ -359,6 +370,7 @@ function addTextAndImageToVideo({
       // Build slide/fade animation for overlay position
       const anim = buildSlideAndFadeAnim({
         start: img.start,
+        end: img.end,
         animation: img.animation,
         isText: false,
         customX: img.x,
@@ -391,6 +403,7 @@ function addTextAndImageToVideo({
     texts.forEach((txt, idx) => {
       const anim = buildSlideAndFadeAnim({
         start: txt.start,
+        end: txt.end,
         animation: txt.animation,
         isText: true,
         customX: txt.x,
@@ -424,7 +437,7 @@ function addTextAndImageToVideo({
 
       const textOptions: any = {
         text: txt.text,
-        text_align: "center",
+        text_align: txt.textAlign ?? "center",
         fontfile: escapedFontPath,
         fontsize: zoomFontSize ?? baseFontSize, // pakai dynamic jika ada zoom
         fontcolor: txt.fontColor ?? "white",
@@ -487,6 +500,7 @@ async function processVideo() {
 
   // CUSTOM OVERLAY CONTENT
   const imagePath = path.resolve("public/dummy.png");
+  const imagePath2 = path.resolve("public/dummy2.png");
 
   const title = "Teruntuk \nTiara Putri, \nmohon maaf \nlahir batin ya!";
 
@@ -497,6 +511,11 @@ async function processVideo() {
     "Terutama untuk \nkomunikasi yang \nsempat terputus dan \nsilaturahmi kita yang \njarang terjaga di \ntahun lalu.";
   const subtitle3 =
     "Harapanku, semoga \nke depannya kita \nbisa mempererat tali \nsilaturahmi kita dan \nlebih sering \nmenyempatkan \nuntuk bertemu.";
+
+  const receiverName = "Tiara Putri";
+  const senderName = "Haikal Surya";
+
+  const closingText = "Semoga Maaf \nMenyembuhkan Luka";
 
   await addTextAndImageToVideo({
     videoPath,
@@ -597,17 +616,69 @@ async function processVideo() {
           speed: 0.6, // cycle per detik
         },
       },
+      {
+        text: senderName,
+        start: 16.3,
+        end: 21,
+        fontPath: fontBold,
+        fontSize: 50,
+        y: "((h-text_h)/2) - 680",
+        animation: {
+          in: { type: "slide-right", duration: 0.8, easing: "ease-out" },
+          hold: 6,
+        },
+      },
+      {
+        text: receiverName,
+        start: 16.3,
+        end: 21,
+        fontPath: fontBold,
+        fontSize: 52,
+        x: "((w-text_w)/2) - 305",
+        y: "((h-text_h)/2) + 285",
+        animation: {
+          in: { type: "slide-right", duration: 0.8, easing: "ease-out" },
+          hold: 6,
+        },
+      },
+      {
+        text: closingText,
+        start: 16.3,
+        end: 21,
+        textAlign: "left",
+        fontColor: "#522A0C",
+        fontPath: fontExtraBold,
+        fontSize: 65,
+        x: "((w-text_w)/2) - 80",
+        y: "((h-text_h)/2) + 580",
+        animation: {
+          in: { type: "slide-right", duration: 0.8, easing: "ease-out" },
+          hold: 6,
+        },
+      },
     ],
     images: [
       {
         imagePath: imagePath,
-        start: 13.5,
+        start: 13.9,
         end: 17,
-        width: 400,
+        width: 650,
+        y: "((h-overlay_h)/2)+740",
         animation: {
-          in: { type: "slide-right", duration: 1 },
-          hold: 2,
-          out: { type: "slide-right", duration: 3 },
+          in: { type: "slide-right", duration: 0.6, easing: "linear" },
+          hold: 1.8,
+          out: { type: "slide-right", duration: 0.6, easing: "linear" },
+        },
+      },
+      {
+        imagePath: imagePath2,
+        start: 16.3,
+        end: 21,
+        width: 990,
+        y: "((h-overlay_h)/2)+572",
+        animation: {
+          in: { type: "slide-right", duration: 0.8, easing: "linear" },
+          hold: 6,
         },
       },
     ],
