@@ -1,6 +1,5 @@
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
-import fs from "fs";
 import path from "path";
 
 ffmpeg.setFfmpegPath(ffmpegPath as string);
@@ -40,13 +39,15 @@ type AnimationType =
   | "slide-down"
   | "slide-left"
   | "slide-right"
-  | "zoom-in"
-  | "zoom-out"
+  | "zoom"
   | "none";
 
 type PhaseAnim = {
   type: AnimationType;
   duration: number;
+  // buat kalo zoom
+  from?: number;
+  to?: number;
 };
 
 type Animation = {
@@ -55,7 +56,7 @@ type Animation = {
   out?: PhaseAnim;
 };
 
-function buildAnimation({
+function buildSlideAndFadeAnim({
   start,
   animation,
   isText = false,
@@ -108,99 +109,132 @@ function buildAnimation({
   // ======================
   const slideTypes = ["slide-left", "slide-right", "slide-up", "slide-down"];
 
-  if (
-    slideTypes.includes(animation.in?.type as string) ||
-    slideTypes.includes(animation.out?.type as string)
-  ) {
-    const dirIn = animation.in?.type;
-    const dirOut = animation.out?.type;
+  const dirIn = animation.in?.type;
+  const dirOut = animation.out?.type;
 
-    // ======================
-    // X AXIS
-    // ======================
-    let xExpr = centerX;
+  // ======================
+  // X AXIS
+  // ======================
+  let xExpr = centerX;
 
-    const isXIn = dirIn === "slide-left" || dirIn === "slide-right";
-    const isXOut = dirOut === "slide-left" || dirOut === "slide-right";
+  const isXIn = dirIn === "slide-left" || dirIn === "slide-right";
+  const isXOut = dirOut === "slide-left" || dirOut === "slide-right";
 
-    if (isXIn || isXOut) {
-      let startX = centerX;
-      let endX = centerX;
+  if (isXIn || isXOut) {
+    let startX = centerX;
+    let endX = centerX;
 
-      if (dirIn === "slide-left") startX = W;
-      if (dirIn === "slide-right") startX = `(-${OBJ_W})`;
+    if (dirIn === "slide-left") startX = W;
+    if (dirIn === "slide-right") startX = `(-${OBJ_W})`;
 
-      if (dirOut === "slide-left") endX = `(-${OBJ_W})`;
-      if (dirOut === "slide-right") endX = W;
+    if (dirOut === "slide-left") endX = `(-${OBJ_W})`;
+    if (dirOut === "slide-right") endX = W;
 
-      const slideInX =
-        isXIn && inDur > 0
-          ? `${startX} + (t-${start})*(${centerX}-${startX})/${inDur}`
-          : centerX;
+    const slideInX =
+      isXIn && inDur > 0
+        ? `${startX}+(t-${start})*(${centerX}-${startX})/${inDur}`
+        : centerX;
 
-      const slideOutX =
-        isXOut && outDur > 0
-          ? `${centerX} + (t-${holdEnd})*(${endX}-${centerX})/${outDur}`
-          : centerX;
+    const slideOutX =
+      isXOut && outDur > 0
+        ? `${centerX}+(t-${holdEnd})*(${endX}-${centerX})/${outDur}`
+        : centerX;
 
-      xExpr =
-        `if(lt(t,${inEnd}),${slideInX},` +
-        `if(lt(t,${holdEnd}),${centerX},${slideOutX}))`;
+    xExpr =
+      `if(lt(t,${inEnd}),${slideInX},` +
+      `if(lt(t,${holdEnd}),${centerX},${slideOutX}))`;
 
-      result.x = xExpr;
-    }
-
-    // ======================
-    // Y AXIS
-    // ======================
-    let yExpr = centerY;
-
-    const isYIn = dirIn === "slide-up" || dirIn === "slide-down";
-    const isYOut = dirOut === "slide-up" || dirOut === "slide-down";
-
-    if (isYIn || isYOut) {
-      let startY = centerY;
-      let endY = centerY;
-
-      if (dirIn === "slide-up") startY = H;
-      if (dirIn === "slide-down") startY = `-${OBJ_H}`;
-
-      if (dirOut === "slide-up") endY = `-${OBJ_H}`;
-      if (dirOut === "slide-down") endY = H;
-
-      const slideInY =
-        isYIn && inDur > 0
-          ? `${startY} + (t-${start})*(${centerY}-${startY})/${inDur}`
-          : centerY;
-
-      const slideOutY =
-        isYOut && outDur > 0
-          ? `${centerY} + (t-${holdEnd})*(${endY}-${centerY})/${outDur}`
-          : centerY;
-
-      yExpr =
-        `if(lt(t,${inEnd}),${slideInY},` +
-        `if(lt(t,${holdEnd}),${centerY},${slideOutY}))`;
-
-      result.y = yExpr;
-    }
+    result.x = xExpr;
   }
 
   // ======================
-  // ZOOM SUPPORT
+  // Y AXIS
   // ======================
-  if (animation.in?.type === "zoom-in" || animation.out?.type === "zoom-in") {
-    result.scale = `
-      if(lt(t,${inEnd}),
-         0.5 + (t-${start})*(0.5/${inDur}),
-      if(lt(t,${holdEnd}),
-         1,
-         1 - (t-${holdEnd})*(0.5/${outDur})
-      ))
-    `;
+  let yExpr = centerY;
+
+  const isYIn = dirIn === "slide-up" || dirIn === "slide-down";
+  const isYOut = dirOut === "slide-up" || dirOut === "slide-down";
+
+  if (isYIn || isYOut) {
+    let startY = centerY;
+    let endY = centerY;
+
+    if (dirIn === "slide-up") startY = H;
+    if (dirIn === "slide-down") startY = `-${OBJ_H}`;
+
+    if (dirOut === "slide-up") endY = `-${OBJ_H}`;
+    if (dirOut === "slide-down") endY = H;
+
+    const slideInY =
+      isYIn && inDur > 0
+        ? `${startY} + (t-${start})*(${centerY}-${startY})/${inDur}`
+        : centerY;
+
+    const slideOutY =
+      isYOut && outDur > 0
+        ? `${centerY} + (t-${holdEnd})*(${endY}-${centerY})/${outDur}`
+        : centerY;
+
+    yExpr =
+      `if(lt(t,${inEnd}),${slideInY},` +
+      `if(lt(t,${holdEnd}),${centerY},${slideOutY}))`;
+
+    result.y = yExpr;
   }
 
   return result;
+}
+
+function buildZoomFontSize({
+  start,
+  animation,
+  baseFontSize,
+}: {
+  start: number;
+  animation?: Animation;
+  baseFontSize: number;
+}): string | null {
+  const inAnim = animation?.in;
+  const outAnim = animation?.out;
+  const inDur = inAnim?.duration ?? 0;
+  const holdDur = animation?.hold ?? 0;
+  const outDur = outAnim?.duration ?? 0;
+
+  const inEnd = start + inDur;
+  const holdEnd = inEnd + holdDur;
+  const outEnd = holdEnd + outDur;
+
+  const hasZoomIn = inAnim?.type === "zoom" && inDur > 0;
+  const hasZoomOut = outAnim?.type === "zoom" && outDur > 0;
+
+  if (!hasZoomIn && !hasZoomOut) return null;
+
+  const fromSize = hasZoomIn
+    ? (inAnim!.from ?? 0.2) * baseFontSize
+    : baseFontSize;
+  const toSizeIn = hasZoomIn ? (inAnim!.to ?? 1) * baseFontSize : baseFontSize;
+
+  const fromSizeOut = hasZoomOut
+    ? (outAnim!.from ?? 1) * baseFontSize
+    : baseFontSize;
+  const toSizeOut = hasZoomOut
+    ? (outAnim!.to ?? 0.2) * baseFontSize
+    : baseFontSize;
+
+  // zoom in: interpolasi dari fromSize → toSizeIn
+  const zoomInExpr = hasZoomIn
+    ? `${fromSize}+(t-${start})*(${toSizeIn}-${fromSize})/${inDur}`
+    : `${baseFontSize}`;
+
+  // zoom out: interpolasi dari fromSizeOut → toSizeOut
+  const zoomOutExpr = hasZoomOut
+    ? `${fromSizeOut}+(t-${holdEnd})*(${toSizeOut}-${fromSizeOut})/${outDur}`
+    : `${baseFontSize}`;
+
+  return (
+    `if(lt(t,${inEnd}),${zoomInExpr},` +
+    `if(lt(t,${holdEnd}),${baseFontSize},${zoomOutExpr}))`
+  );
 }
 
 function addTextAndImageToVideo({
@@ -222,14 +256,11 @@ function addTextAndImageToVideo({
     // =========================
     images.forEach((img, idx) => {
       command.input(img.imagePath);
-      const anim = buildAnimation({
-        start: img.start,
-        animation: img.animation,
-        isText: false,
-      });
 
       const imageInputIndex = idx + 1; // karena 0 = video utama
       let imageStream = `${imageInputIndex}:v`;
+
+      const outputName = `v_img_${idx}`;
 
       // Scaling (optional)
       if (img.width) {
@@ -248,7 +279,12 @@ function addTextAndImageToVideo({
         imageStream = scaledName;
       }
 
-      const outputName = `v_img_${idx}`;
+      // Build slide/fade animation for overlay position
+      const anim = buildSlideAndFadeAnim({
+        start: img.start,
+        animation: img.animation,
+        isText: false,
+      });
 
       // img over video
       const overlayOptions: any = {
@@ -274,22 +310,33 @@ function addTextAndImageToVideo({
     // TEXT OVERLAYS
     // =========================
     texts.forEach((txt, idx) => {
-      const anim = buildAnimation({
+      const anim = buildSlideAndFadeAnim({
         start: txt.start,
         animation: txt.animation,
         isText: true,
       });
       const outputName = `v_text_${idx}`;
+      const baseFontSize = txt.fontSize ?? 48;
+
+      const escapedFontPath = txt.fontPath
+        .replace(/\\/g, "/")
+        .replace(/^([A-Za-z]):/, "$1\\\\:");
+
+      // Cek apakah ada zoom animation
+      const zoomFontSize = buildZoomFontSize({
+        start: txt.start,
+        animation: txt.animation,
+        baseFontSize,
+      });
 
       const textOptions: any = {
         text: txt.text,
-        fontfile: txt.fontPath.replace(/\\/g, "\\\\"),
-        fontsize: txt.fontSize ?? 48,
+        fontfile: escapedFontPath,
+        fontsize: zoomFontSize ?? baseFontSize, // pakai dynamic jika ada zoom
         fontcolor: txt.fontColor ?? "white",
         x: anim.x ?? txt.x ?? "(w-text_w)/2",
         y: anim.y ?? txt.y ?? "h-200",
       };
-
       if (anim.enable) {
         textOptions.enable = anim.enable;
       }
@@ -333,7 +380,7 @@ function addTextAndImageToVideo({
 }
 
 async function processVideo() {
-  const outputPath = "final_video_18.mp4";
+  const outputPath = "final_video_33.mp4";
   const videoPath = path.resolve("public/placeholder-video.mp4");
   const imagePath = path.resolve("public/test.jpg");
   const fontPath = path.resolve("public/test.ttf");
@@ -361,7 +408,7 @@ async function processVideo() {
         animation: {
           in: { type: "slide-right", duration: 1 },
           hold: 2,
-          out: { type: "slide-right", duration: 5 },
+          out: { type: "slide-right", duration: 3 },
         },
       },
     ],
@@ -372,9 +419,9 @@ async function processVideo() {
         end: 4,
         fontPath,
         fontSize: 60,
-        y: "h-300",
+        y: "h-800",
         animation: {
-          in: { type: "fade", duration: 1 },
+          in: { type: "zoom", duration: 2, from: 0.2, to: 1 },
           hold: 2,
           out: { type: "slide-left", duration: 1.5 },
         },
