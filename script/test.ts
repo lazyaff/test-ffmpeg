@@ -14,6 +14,13 @@ type TextOverlay = {
   fontColor?: string;
   fontPath: string;
   animation?: Animation;
+  idleAnimation?: IdleAnimation;
+};
+
+type IdleAnimation = {
+  type: "float"; // bisa dikembangin nanti: "shake", "pulse", dll
+  amplitude?: number; // seberapa jauh naik-turun (px), default 10
+  speed?: number; // seberapa cepat (cycle per detik), default 1
 };
 
 type ImageOverlay = {
@@ -237,6 +244,23 @@ function buildZoomFontSize({
   );
 }
 
+function buildIdleFloatY({
+  start,
+  baseY,
+  idleAnimation,
+}: {
+  start: number;
+  baseY: string;
+  idleAnimation: IdleAnimation;
+}): string {
+  const amplitude = idleAnimation.amplitude ?? 10;
+  const speed = idleAnimation.speed ?? 1;
+
+  // sin wave: baseY + amplitude * sin(2π * speed * (t - start))
+  // sin bernilai -1 sampai 1, jadi teks naik-turun sebesar amplitude px
+  return `${baseY}+${amplitude}*sin(2*PI*${speed}*(t-${start}))`;
+}
+
 function addTextAndImageToVideo({
   videoPath,
   outputPath,
@@ -329,13 +353,25 @@ function addTextAndImageToVideo({
         baseFontSize,
       });
 
+      // Base Y: pakai dari anim slide jika ada, fallback ke txt.y atau default
+      const baseY = anim.y ?? txt.y ?? "h-200";
+
+      // Jika ada idleAnimation, override Y dengan float expression
+      const finalY = txt.idleAnimation
+        ? buildIdleFloatY({
+            start: txt.start,
+            baseY,
+            idleAnimation: txt.idleAnimation,
+          })
+        : baseY;
+
       const textOptions: any = {
         text: txt.text,
         fontfile: escapedFontPath,
         fontsize: zoomFontSize ?? baseFontSize, // pakai dynamic jika ada zoom
         fontcolor: txt.fontColor ?? "white",
         x: anim.x ?? txt.x ?? "(w-text_w)/2",
-        y: anim.y ?? txt.y ?? "h-200",
+        y: finalY,
       };
       if (anim.enable) {
         textOptions.enable = anim.enable;
@@ -380,7 +416,7 @@ function addTextAndImageToVideo({
 }
 
 async function processVideo() {
-  const outputPath = "final_video_33.mp4";
+  const outputPath = "final_video_35.mp4";
   const videoPath = path.resolve("public/placeholder-video.mp4");
   const imagePath = path.resolve("public/test.jpg");
   const fontPath = path.resolve("public/test.ttf");
@@ -424,6 +460,24 @@ async function processVideo() {
           in: { type: "zoom", duration: 2, from: 0.2, to: 1 },
           hold: 2,
           out: { type: "slide-left", duration: 1.5 },
+        },
+      },
+      {
+        text: title2,
+        start: 0,
+        end: 4,
+        fontPath,
+        fontSize: 60,
+        y: "h-1200",
+        animation: {
+          in: { type: "zoom", duration: 2, from: 0.2, to: 1 },
+          hold: 2,
+          out: { type: "slide-left", duration: 1.5 },
+        },
+        idleAnimation: {
+          type: "float",
+          amplitude: 150, // naik-turun 15px
+          speed: 0.2, // cycle per detik
         },
       },
     ],
