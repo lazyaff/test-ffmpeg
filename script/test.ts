@@ -49,12 +49,16 @@ type AnimationType =
   | "zoom"
   | "none";
 
+type EasingType = "linear" | "ease-in" | "ease-out" | "ease-in-out";
+
 type PhaseAnim = {
   type: AnimationType;
   duration: number;
   // buat kalo zoom
   from?: number;
   to?: number;
+  overshoot?: number;
+  easing?: EasingType;
 };
 
 type Animation = {
@@ -94,27 +98,34 @@ function buildSlideAndFadeAnim({
     enable: `between(t,${start},${outEnd})`,
   };
 
+  // Progress linear 0→1
+  const progressIn = inDur > 0 ? `(t-${start})/${inDur}` : "1";
+  const progressOut = outDur > 0 ? `(t-${holdEnd})/${outDur}` : "1";
+
+  // Eased progress
+  const easedProgressIn = buildEasedProgress(
+    progressIn,
+    animation.in?.easing ?? "linear",
+  );
+  const easedProgressOut = buildEasedProgress(
+    progressOut,
+    animation.out?.easing ?? "linear",
+  );
+
   // ======================
   // FADE
   // ======================
   if (animation.in?.type === "fade" || animation.out?.type === "fade") {
     const fadeIn =
-      animation.in?.type === "fade" && inDur > 0
-        ? `(t-${start})/${inDur}`
-        : "1";
+      animation.in?.type === "fade" && inDur > 0 ? easedProgressIn : "1";
 
     const fadeOut =
       animation.out?.type === "fade" && outDur > 0
-        ? `(${outEnd}-t)/${outDur}`
+        ? `1-${easedProgressOut}`
         : "1";
 
     result.alpha = `if(lt(t,${inEnd}),${fadeIn},if(lt(t,${holdEnd}),1,${fadeOut}))`;
   }
-
-  // ======================
-  // SLIDE (CROSS AXIS SAFE)
-  // ======================
-  const slideTypes = ["slide-left", "slide-right", "slide-up", "slide-down"];
 
   const dirIn = animation.in?.type;
   const dirOut = animation.out?.type;
@@ -122,8 +133,6 @@ function buildSlideAndFadeAnim({
   // ======================
   // X AXIS
   // ======================
-  let xExpr = centerX;
-
   const isXIn = dirIn === "slide-left" || dirIn === "slide-right";
   const isXOut = dirOut === "slide-left" || dirOut === "slide-right";
 
@@ -133,32 +142,28 @@ function buildSlideAndFadeAnim({
 
     if (dirIn === "slide-left") startX = W;
     if (dirIn === "slide-right") startX = `(-${OBJ_W})`;
-
     if (dirOut === "slide-left") endX = `(-${OBJ_W})`;
     if (dirOut === "slide-right") endX = W;
 
+    // Interpolasi pakai eased progress: from + eased*(to-from)
     const slideInX =
       isXIn && inDur > 0
-        ? `${startX}+(t-${start})*(${centerX}-${startX})/${inDur}`
+        ? `${startX}+${easedProgressIn}*(${centerX}-(${startX}))`
         : centerX;
 
     const slideOutX =
       isXOut && outDur > 0
-        ? `${centerX}+(t-${holdEnd})*(${endX}-${centerX})/${outDur}`
+        ? `${centerX}+${easedProgressOut}*(${endX}-(${centerX}))`
         : centerX;
 
-    xExpr =
+    result.x =
       `if(lt(t,${inEnd}),${slideInX},` +
       `if(lt(t,${holdEnd}),${centerX},${slideOutX}))`;
-
-    result.x = xExpr;
   }
 
   // ======================
   // Y AXIS
   // ======================
-  let yExpr = centerY;
-
   const isYIn = dirIn === "slide-up" || dirIn === "slide-down";
   const isYOut = dirOut === "slide-up" || dirOut === "slide-down";
 
@@ -168,25 +173,22 @@ function buildSlideAndFadeAnim({
 
     if (dirIn === "slide-up") startY = H;
     if (dirIn === "slide-down") startY = `-${OBJ_H}`;
-
     if (dirOut === "slide-up") endY = `-${OBJ_H}`;
     if (dirOut === "slide-down") endY = H;
 
     const slideInY =
       isYIn && inDur > 0
-        ? `${startY} + (t-${start})*(${centerY}-${startY})/${inDur}`
+        ? `${startY}+${easedProgressIn}*(${centerY}-(${startY}))`
         : centerY;
 
     const slideOutY =
       isYOut && outDur > 0
-        ? `${centerY} + (t-${holdEnd})*(${endY}-${centerY})/${outDur}`
+        ? `${centerY}+${easedProgressOut}*(${endY}-(${centerY}))`
         : centerY;
 
-    yExpr =
+    result.y =
       `if(lt(t,${inEnd}),${slideInY},` +
       `if(lt(t,${holdEnd}),${centerY},${slideOutY}))`;
-
-    result.y = yExpr;
   }
 
   return result;
@@ -221,6 +223,27 @@ function buildZoomFontSize({
     : baseFontSize;
   const toSizeIn = hasZoomIn ? (inAnim!.to ?? 1) * baseFontSize : baseFontSize;
 
+  // --- OVERSHOOT LOGIC ---
+  const overshoot = hasZoomIn ? inAnim!.overshoot : undefined;
+  let zoomInExpr: string;
+
+  if (hasZoomIn && overshoot) {
+    const peakSize = overshoot * baseFontSize;
+    // Fase 1 (0 → 70% durasi): from → peak
+    // Fase 2 (70% → 100% durasi): peak → toSizeIn
+    const t1 = start + inDur * 0.7;
+    const t2 = inEnd;
+
+    const phase1 = `${fromSize}+(t-${start})*(${peakSize}-${fromSize})/${inDur * 0.7}`;
+    const phase2 = `${peakSize}+(t-${t1})*(${toSizeIn}-${peakSize})/${inDur * 0.3}`;
+
+    zoomInExpr = `if(lt(t,${t1}),${phase1},${phase2})`;
+  } else {
+    zoomInExpr = hasZoomIn
+      ? `${fromSize}+(t-${start})*(${toSizeIn}-${fromSize})/${inDur}`
+      : `${baseFontSize}`;
+  }
+
   const fromSizeOut = hasZoomOut
     ? (outAnim!.from ?? 1) * baseFontSize
     : baseFontSize;
@@ -228,12 +251,6 @@ function buildZoomFontSize({
     ? (outAnim!.to ?? 0.2) * baseFontSize
     : baseFontSize;
 
-  // zoom in: interpolasi dari fromSize → toSizeIn
-  const zoomInExpr = hasZoomIn
-    ? `${fromSize}+(t-${start})*(${toSizeIn}-${fromSize})/${inDur}`
-    : `${baseFontSize}`;
-
-  // zoom out: interpolasi dari fromSizeOut → toSizeOut
   const zoomOutExpr = hasZoomOut
     ? `${fromSizeOut}+(t-${holdEnd})*(${toSizeOut}-${fromSizeOut})/${outDur}`
     : `${baseFontSize}`;
@@ -259,6 +276,26 @@ function buildIdleFloatY({
   // sin wave: baseY + amplitude * sin(2π * speed * (t - start))
   // sin bernilai -1 sampai 1, jadi teks naik-turun sebesar amplitude px
   return `${baseY}+${amplitude}*sin(2*PI*${speed}*(t-${start}))`;
+}
+
+function buildEasedProgress(p: string, easing: EasingType = "linear"): string {
+  switch (easing) {
+    case "ease-in":
+      // mulai lambat, makin cepat: p^3
+      return `(${p})*(${p})*(${p})`;
+
+    case "ease-out":
+      // mulai cepat, makin lambat: 1-(1-p)^3
+      return `(1-(1-(${p}))*(1-(${p}))*(1-(${p})))`;
+
+    case "ease-in-out":
+      // lambat di awal & akhir: smoothstep = 3p²-2p³
+      return `((${p})*(${p})*(3-2*(${p})))`;
+
+    case "linear":
+    default:
+      return p;
+  }
 }
 
 function addTextAndImageToVideo({
@@ -354,7 +391,7 @@ function addTextAndImageToVideo({
       });
 
       // Base Y: pakai dari anim slide jika ada, fallback ke txt.y atau default
-      const baseY = anim.y ?? txt.y ?? "h-200";
+      const baseY = anim.y ?? txt.y ?? "(h-text_h)/2";
 
       // Jika ada idleAnimation, override Y dengan float expression
       const finalY = txt.idleAnimation
@@ -367,12 +404,14 @@ function addTextAndImageToVideo({
 
       const textOptions: any = {
         text: txt.text,
+        text_align: "center",
         fontfile: escapedFontPath,
         fontsize: zoomFontSize ?? baseFontSize, // pakai dynamic jika ada zoom
         fontcolor: txt.fontColor ?? "white",
         x: anim.x ?? txt.x ?? "(w-text_w)/2",
         y: finalY,
       };
+
       if (anim.enable) {
         textOptions.enable = anim.enable;
       }
@@ -416,13 +455,20 @@ function addTextAndImageToVideo({
 }
 
 async function processVideo() {
-  const outputPath = "final_video_35.mp4";
+  // BASE VIDEO & OUTPUT PATH
   const videoPath = path.resolve("public/placeholder-video.mp4");
-  const imagePath = path.resolve("public/test.jpg");
-  const fontPath = path.resolve("public/test.ttf");
-  const datetime = Date.now();
+  const outputPath = "text-1-final_video.mp4";
 
-  const title = "Teruntuk Tiara Putri, mohon maaf lahir batin ya!";
+  // FONTS
+  const fontThin = path.resolve("public/fonts/font-thin.ttf");
+  const fontRegular = path.resolve("public/fonts/font-regular.ttf");
+  const fontBold = path.resolve("public/fonts/font-bold.ttf");
+  const fontExtraBold = path.resolve("public/fonts/font-extrabold.ttf");
+
+  // CUSTOM OVERLAY CONTENT
+  const imagePath = path.resolve("public/test.jpg");
+
+  const title = "Teruntuk \nTiara Putri, \nmohon maaf \nlahir batin ya!";
 
   const title2 = "Halo Tiara Putri, Selamat Hari Raya Idul Fitri!";
   const subtitle1 =
@@ -435,52 +481,58 @@ async function processVideo() {
   await addTextAndImageToVideo({
     videoPath,
     outputPath,
-    images: [
-      {
-        imagePath: imagePath,
-        start: 0,
-        end: 6,
-        width: 400,
-        animation: {
-          in: { type: "slide-right", duration: 1 },
-          hold: 2,
-          out: { type: "slide-right", duration: 3 },
-        },
-      },
-    ],
     texts: [
       {
         text: title,
-        start: 0,
-        end: 4,
-        fontPath,
-        fontSize: 60,
-        y: "h-800",
+        start: 0.5,
+        end: 3,
+        fontPath: fontBold,
+        fontSize: 62,
+        // fontColor: "#522A0C",
         animation: {
-          in: { type: "zoom", duration: 2, from: 0.2, to: 1 },
-          hold: 2,
-          out: { type: "slide-left", duration: 1.5 },
+          in: {
+            type: "zoom",
+            duration: 1,
+            from: 0.2,
+            to: 1,
+            overshoot: 1.15,
+          },
+          hold: 1.15,
+          out: { type: "slide-left", duration: 0.4, easing: "ease-in" },
         },
       },
-      {
-        text: title2,
-        start: 0,
-        end: 4,
-        fontPath,
-        fontSize: 60,
-        y: "h-1200",
-        animation: {
-          in: { type: "zoom", duration: 2, from: 0.2, to: 1 },
-          hold: 2,
-          out: { type: "slide-left", duration: 1.5 },
-        },
-        idleAnimation: {
-          type: "float",
-          amplitude: 150, // naik-turun 15px
-          speed: 0.2, // cycle per detik
-        },
-      },
+      // {
+      //   text: title2,
+      //   start: 0,
+      //   end: 4,
+      //   fontPath,
+      //   fontSize: 60,
+      //   y: "h-1200",
+      //   animation: {
+      //     in: { type: "zoom", duration: 2, from: 0.2, to: 1 },
+      //     hold: 2,
+      //     out: { type: "slide-left", duration: 1.5 },
+      //   },
+      //   idleAnimation: {
+      //     type: "float",
+      //     amplitude: 150, // naik-turun 15px
+      //     speed: 0.2, // cycle per detik
+      //   },
+      // },
     ],
+    // images: [
+    //   {
+    //     imagePath: imagePath,
+    //     start: 0,
+    //     end: 6,
+    //     width: 400,
+    //     animation: {
+    //       in: { type: "slide-down", duration: 1 },
+    //       hold: 2,
+    //       out: { type: "slide-up", duration: 3 },
+    //     },
+    //   },
+    // ],
   });
 
   console.log("Video selesai dibuat 🎉");
