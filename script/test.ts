@@ -353,64 +353,6 @@ function addTextAndImageToVideo({
     let lastVideoStream = "0:v";
 
     // =========================
-    // IMAGE OVERLAYS
-    // =========================
-    images.forEach((img, idx) => {
-      command.input(img.imagePath);
-
-      const imageInputIndex = idx + 1; // karena 0 = video utama
-      let imageStream = `${imageInputIndex}:v`;
-
-      const outputName = `v_img_${idx}`;
-
-      // Scaling (optional)
-      if (img.width) {
-        const scaledName = `scaled${idx}`;
-
-        complexFilters.push({
-          filter: "scale",
-          options: {
-            w: img.width,
-            h: -1, // auto
-          },
-          inputs: imageStream,
-          outputs: scaledName,
-        });
-
-        imageStream = scaledName;
-      }
-
-      // Build slide/fade animation for overlay position
-      const anim = buildSlideAndFadeAnim({
-        start: img.start,
-        end: img.end,
-        animation: img.animation,
-        isText: false,
-        customX: img.x,
-        customY: img.y,
-      });
-
-      // img over video
-      const overlayOptions: any = {
-        x: anim.x ?? img.x ?? "(main_w-overlay_w)/2",
-        y: anim.y ?? img.y ?? "(main_h-overlay_h)/2",
-      };
-
-      if (anim.enable) {
-        overlayOptions.enable = anim.enable;
-      }
-
-      complexFilters.push({
-        filter: "overlay",
-        options: overlayOptions,
-        inputs: [lastVideoStream, imageStream],
-        outputs: outputName,
-      });
-
-      lastVideoStream = outputName;
-    });
-
-    // =========================
     // TEXT OVERLAYS
     // =========================
     texts.forEach((txt, idx) => {
@@ -477,6 +419,64 @@ function addTextAndImageToVideo({
       lastVideoStream = outputName;
     });
 
+    // =========================
+    // IMAGE OVERLAYS
+    // =========================
+    images.forEach((img, idx) => {
+      command.input(img.imagePath);
+
+      const imageInputIndex = idx + 1; // karena 0 = video utama
+      let imageStream = `${imageInputIndex}:v`;
+
+      const outputName = `v_img_${idx}`;
+
+      // Scaling (optional)
+      if (img.width) {
+        const scaledName = `scaled${idx}`;
+
+        complexFilters.push({
+          filter: "scale",
+          options: {
+            w: img.width,
+            h: -1, // auto
+          },
+          inputs: imageStream,
+          outputs: scaledName,
+        });
+
+        imageStream = scaledName;
+      }
+
+      // Build slide/fade animation for overlay position
+      const anim = buildSlideAndFadeAnim({
+        start: img.start,
+        end: img.end,
+        animation: img.animation,
+        isText: false,
+        customX: img.x,
+        customY: img.y,
+      });
+
+      // img over video
+      const overlayOptions: any = {
+        x: anim.x ?? img.x ?? "(main_w-overlay_w)/2",
+        y: anim.y ?? img.y ?? "(main_h-overlay_h)/2",
+      };
+
+      if (anim.enable) {
+        overlayOptions.enable = anim.enable;
+      }
+
+      complexFilters.push({
+        filter: "overlay",
+        options: overlayOptions,
+        inputs: [lastVideoStream, imageStream],
+        outputs: outputName,
+      });
+
+      lastVideoStream = outputName;
+    });
+
     // HD output
     const scaledOutput = "final_scaled";
 
@@ -517,6 +517,7 @@ async function processVideo() {
   const imagePath4 = path.resolve("public/dummy4.png");
   const imagePath2 = path.resolve("public/dummy2.png");
   const imagePath5 = path.resolve("public/dummy5.png");
+  const imageAmplop = path.resolve("public/amplop.png");
 
   const title = "Teruntuk \nTiara Putri, \nmohon maaf \nlahir batin ya!";
 
@@ -657,6 +658,17 @@ async function processVideo() {
         animation: {
           in: { type: "slide-right", duration: 0.75, easing: "ease-in-out" },
           hold: 6,
+        },
+      },
+      {
+        imagePath: imageAmplop,
+        start: 5.7,
+        end: 7,
+        width: 1080, // full width
+        y: "main_h-overlay_h",
+        animation: {
+          in: { type: "fade", duration: 0.1 },
+          hold: 3,
         },
       },
     ],
