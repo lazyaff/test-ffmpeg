@@ -22,6 +22,7 @@ type IdleAnimation = {
   type: "float"; // bisa dikembangin nanti: "shake", "pulse", dll
   amplitude?: number; // seberapa jauh naik-turun (px), default 10
   speed?: number; // seberapa cepat (cycle per detik), default 1
+  startFrom?: FloatStartPosition;
 };
 
 type ImageOverlay = {
@@ -51,6 +52,8 @@ type AnimationType =
   | "none";
 
 type EasingType = "linear" | "ease-in" | "ease-out" | "ease-in-out";
+
+type FloatStartPosition = "top" | "bottom" | "center";
 
 type PhaseAnim = {
   type: AnimationType;
@@ -292,17 +295,26 @@ function buildIdleFloatY({
   start,
   baseY,
   idleAnimation,
+  startFrom = "top",
 }: {
   start: number;
   baseY: string;
   idleAnimation: IdleAnimation;
+  startFrom?: FloatStartPosition;
 }): string {
   const amplitude = idleAnimation.amplitude ?? 10;
   const speed = idleAnimation.speed ?? 1;
 
-  // sin wave: baseY + amplitude * sin(2π * speed * (t - start))
-  // sin bernilai -1 sampai 1, jadi teks naik-turun sebesar amplitude px
-  return `${baseY}+${amplitude}*sin(2*PI*${speed}*(t-${start}))`;
+  const wave = `2*PI*${speed}*(t-${start})`;
+
+  const sinExpr =
+    startFrom === "top"
+      ? `sin(${wave}+PI/2)` // cos: mulai dari +amplitude (atas)
+      : startFrom === "bottom"
+        ? `sin(${wave}-PI/2)` // -cos: mulai dari -amplitude (bawah)
+        : `sin(${wave})`; // default: mulai dari tengah
+
+  return `${baseY}+${amplitude}*${sinExpr}`;
 }
 
 function buildEasedProgress(p: string, easing: EasingType = "linear"): string {
@@ -316,8 +328,9 @@ function buildEasedProgress(p: string, easing: EasingType = "linear"): string {
       return `(1-(1-(${p}))*(1-(${p}))*(1-(${p})))`;
 
     case "ease-in-out":
-      // lambat di awal & akhir: smoothstep = 3p²-2p³
-      return `((${p})*(${p})*(3-2*(${p})))`;
+      // sine-based: 0.5 - 0.5*cos(π*p)
+      // identik secara visual dengan smoothstep tapi p hanya dievaluasi sekali
+      return `(0.5-0.5*cos(PI*(${p})))`;
 
     case "linear":
     default:
@@ -432,6 +445,7 @@ function addTextAndImageToVideo({
             start: txt.start,
             baseY,
             idleAnimation: txt.idleAnimation,
+            startFrom: txt.idleAnimation.startFrom,
           })
         : baseY;
 
@@ -490,7 +504,7 @@ function addTextAndImageToVideo({
 async function processVideo() {
   // BASE VIDEO & OUTPUT PATH
   const videoPath = path.resolve("public/video.mp4");
-  const outputPath = "image-final_video.mp4";
+  const outputPath = "idle-final_video.mp4";
 
   // FONTS
   const fontThin = path.resolve("public/fonts/font-thin.ttf");
@@ -499,8 +513,10 @@ async function processVideo() {
   const fontExtraBold = path.resolve("public/fonts/font-extrabold.ttf");
 
   // CUSTOM OVERLAY CONTENT
-  const imagePath = path.resolve("public/dummy.png");
+  const imagePath3 = path.resolve("public/dummy3.png");
+  const imagePath4 = path.resolve("public/dummy4.png");
   const imagePath2 = path.resolve("public/dummy2.png");
+  const imagePath5 = path.resolve("public/dummy5.png");
 
   const title = "Teruntuk \nTiara Putri, \nmohon maaf \nlahir batin ya!";
 
@@ -542,50 +558,50 @@ async function processVideo() {
       },
       {
         text: title2,
-        start: 5.5,
-        end: 8,
+        start: 5.832,
+        end: 10,
         fontColor: "#522A0C",
         fontPath: fontExtraBold,
         fontSize: 52,
         y: "((h-text_h)/2)-170",
         animation: {
-          in: { type: "slide-up", duration: 1.14, easing: "ease-in-out" },
-          hold: 1.1,
+          in: { type: "slide-up", duration: 1.07, easing: "ease-out" },
+          hold: 0.85,
           out: { type: "slide-right", duration: 0.3, easing: "ease-in" },
         },
         idleAnimation: {
           type: "float",
           amplitude: 5, // naik-turun px
-          speed: 0.2, // cycle per detik
+          speed: 0.5, // cycle per detik
         },
       },
       {
         text: subtitle1,
-        start: 5.5,
-        end: 8,
+        start: 5.95,
+        end: 10,
         fontColor: "#522A0C",
         fontPath: fontBold,
         fontSize: 40,
         y: "((h-text_h)/2) + 80",
         animation: {
-          in: { type: "slide-up", duration: 1.14, easing: "ease-in-out" },
-          hold: 1.1,
+          in: { type: "slide-up", duration: 0.9, easing: "ease-out" },
+          hold: 0.9,
           out: { type: "slide-right", duration: 0.3, easing: "ease-in" },
         },
         idleAnimation: {
           type: "float",
           amplitude: 5, // naik-turun px
-          speed: 0.2, // cycle per detik
+          speed: 0.5, // cycle per detik
         },
       },
       {
         text: subtitle2,
         start: 8,
-        end: 9.5,
+        end: 10,
         fontColor: "#522A0C",
         fontPath: fontBold,
         fontSize: 44,
-        y: "((h-text_h)/2) - 20",
+        y: "((h-text_h)/2) - 10",
         animation: {
           in: { type: "fade", duration: 0.1 },
           hold: 1.3,
@@ -593,13 +609,14 @@ async function processVideo() {
         },
         idleAnimation: {
           type: "float",
-          amplitude: 30, // naik-turun px
-          speed: 0.6, // cycle per detik
+          amplitude: 45, // naik-turun px
+          speed: 0.3, // cycle per detik
+          startFrom: "top",
         },
       },
       {
         text: subtitle3,
-        start: 9.7,
+        start: 9.65,
         end: 15,
         fontColor: "#522A0C",
         fontPath: fontBold,
@@ -607,77 +624,38 @@ async function processVideo() {
         y: "((h-text_h)/2) - 30",
         animation: {
           in: { type: "fade", duration: 0.1 },
-          hold: 1.25,
+          hold: 1.3,
           out: { type: "slide-up", duration: 0.5, easing: "ease-in" },
         },
         idleAnimation: {
           type: "float",
-          amplitude: 5, // naik-turun px
-          speed: 0.6, // cycle per detik
-        },
-      },
-      {
-        text: senderName,
-        start: 16.3,
-        end: 21,
-        fontPath: fontBold,
-        fontSize: 50,
-        y: "((h-text_h)/2) - 680",
-        animation: {
-          in: { type: "slide-right", duration: 0.8, easing: "ease-out" },
-          hold: 6,
-        },
-      },
-      {
-        text: receiverName,
-        start: 16.3,
-        end: 21,
-        fontPath: fontBold,
-        fontSize: 52,
-        x: "((w-text_w)/2) - 305",
-        y: "((h-text_h)/2) + 285",
-        animation: {
-          in: { type: "slide-right", duration: 0.8, easing: "ease-out" },
-          hold: 6,
-        },
-      },
-      {
-        text: closingText,
-        start: 16.3,
-        end: 21,
-        textAlign: "left",
-        fontColor: "#522A0C",
-        fontPath: fontExtraBold,
-        fontSize: 65,
-        x: "((w-text_w)/2) - 80",
-        y: "((h-text_h)/2) + 580",
-        animation: {
-          in: { type: "slide-right", duration: 0.8, easing: "ease-out" },
-          hold: 6,
+          amplitude: 45, // naik-turun px
+          speed: 0.3, // cycle per detik
+          startFrom: "bottom",
         },
       },
     ],
     images: [
       {
-        imagePath: imagePath,
+        imagePath: imagePath3,
         start: 13.9,
         end: 17,
-        width: 650,
-        y: "((h-overlay_h)/2)+740",
+        width: 995,
+        y: "((h-overlay_h)/2)+470",
         animation: {
-          in: { type: "slide-right", duration: 0.6, easing: "linear" },
-          hold: 1.8,
-          out: { type: "slide-right", duration: 0.6, easing: "linear" },
+          in: { type: "slide-right", duration: 1, easing: "ease-out" },
+          hold: 1.3,
+          out: { type: "slide-right", duration: 0.55, easing: "ease-in" },
         },
       },
       {
-        imagePath: imagePath2,
-        start: 16.3,
+        imagePath: imagePath4,
+        start: 16.4,
         end: 21,
-        width: 990,
-        y: "((h-overlay_h)/2)+572",
+        width: 1080, // full width
+        y: "((h-overlay_h)/2)+465",
         animation: {
-          in: { type: "slide-right", duration: 0.8, easing: "linear" },
+          in: { type: "slide-right", duration: 0.75, easing: "ease-in-out" },
           hold: 6,
         },
       },
