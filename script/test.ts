@@ -63,6 +63,7 @@ type PhaseAnim = {
   to?: number;
   overshoot?: number;
   easing?: EasingType;
+  slideFrom?: string;
 };
 
 type Animation = {
@@ -185,10 +186,10 @@ function buildSlideAndFadeAnim({
     let startY = restY;
     let endY = restY;
 
-    if (dirIn === "slide-up") startY = H;
-    if (dirIn === "slide-down") startY = `-${OBJ_H}`;
-    if (dirOut === "slide-up") endY = `-${OBJ_H}`;
-    if (dirOut === "slide-down") endY = H;
+    if (dirIn === "slide-up") startY = animation.in?.slideFrom ?? H;
+    if (dirIn === "slide-down") startY = animation.in?.slideFrom ?? `-${OBJ_H}`;
+    if (dirOut === "slide-up") endY = animation.out?.slideFrom ?? `-${OBJ_H}`;
+    if (dirOut === "slide-down") endY = animation.out?.slideFrom ?? H;
 
     const slideInY =
       isYIn && inDur > 0
@@ -504,6 +505,7 @@ function addTextAndImageToVideo({
     command
       .complexFilter(complexFilters, lastVideoStream)
       .outputOptions(["-pix_fmt yuv420p", "-color_range pc"])
+      .addOption("-map", "0:a")
       .save(outputPath)
       .on("end", resolve)
       .on("error", reject);
@@ -567,15 +569,20 @@ async function processVideo() {
       },
       {
         text: title2,
-        start: 5.832,
+        start: 6,
         end: 10,
         fontColor: "#522A0C",
         fontPath: fontExtraBold,
         fontSize: 52,
         y: "((h-text_h)/2)-170",
         animation: {
-          in: { type: "slide-up", duration: 1.07, easing: "ease-out" },
-          hold: 0.85,
+          in: {
+            type: "slide-up",
+            duration: 1.05,
+            easing: "ease-out",
+            slideFrom: "main_h-580",
+          },
+          hold: 0.7,
           out: { type: "slide-right", duration: 0.3, easing: "ease-in" },
         },
         idleAnimation: {
@@ -586,15 +593,20 @@ async function processVideo() {
       },
       {
         text: subtitle1,
-        start: 5.95,
+        start: 6.1,
         end: 10,
         fontColor: "#522A0C",
         fontPath: fontBold,
         fontSize: 40,
         y: "((h-text_h)/2) + 80",
         animation: {
-          in: { type: "slide-up", duration: 0.9, easing: "ease-out" },
-          hold: 0.9,
+          in: {
+            type: "slide-up",
+            duration: 0.9,
+            easing: "ease-out",
+            slideFrom: "main_h-580",
+          },
+          hold: 0.75,
           out: { type: "slide-right", duration: 0.3, easing: "ease-in" },
         },
         idleAnimation: {
@@ -659,12 +671,12 @@ async function processVideo() {
       },
       {
         imagePath: imagePath4,
-        start: 16.08,
+        start: 16.05,
         end: 21,
         width: 1080, // full width
         y: "((h-overlay_h)/2)+465",
         animation: {
-          in: { type: "slide-right", duration: 0.98, easing: "ease-out" },
+          in: { type: "slide-right", duration: 0.98, easing: "linear" },
           hold: 6,
         },
       },
