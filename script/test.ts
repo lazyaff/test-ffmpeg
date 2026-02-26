@@ -447,6 +447,15 @@ function addTextAndImageToVideo({
         imageStream = scaledName;
       }
 
+      // Setelah scale filter, sebelum overlay
+      complexFilters.push({
+        filter: "format",
+        options: { pix_fmts: "rgba" },
+        inputs: imageStream,
+        outputs: `${imageStream}_fmt`,
+      });
+      imageStream = `${imageStream}_fmt`;
+
       // Build slide/fade animation for overlay position
       const anim = buildSlideAndFadeAnim({
         start: img.start,
@@ -494,7 +503,7 @@ function addTextAndImageToVideo({
 
     command
       .complexFilter(complexFilters, lastVideoStream)
-      .outputOptions(["-pix_fmt yuv420p"])
+      .outputOptions(["-pix_fmt yuv420p", "-color_range pc"])
       .save(outputPath)
       .on("end", resolve)
       .on("error", reject);
@@ -517,7 +526,6 @@ async function processVideo() {
   const imagePath4 = path.resolve("public/dummy4.png");
   const imagePath2 = path.resolve("public/dummy2.png");
   const imagePath5 = path.resolve("public/dummy5.png");
-  const imageAmplop = path.resolve("public/amplop.png");
 
   const title = "Teruntuk \nTiara Putri, \nmohon maaf \nlahir batin ya!";
 
@@ -651,24 +659,13 @@ async function processVideo() {
       },
       {
         imagePath: imagePath4,
-        start: 16.4,
+        start: 16.08,
         end: 21,
         width: 1080, // full width
         y: "((h-overlay_h)/2)+465",
         animation: {
-          in: { type: "slide-right", duration: 0.75, easing: "ease-in-out" },
+          in: { type: "slide-right", duration: 0.98, easing: "ease-out" },
           hold: 6,
-        },
-      },
-      {
-        imagePath: imageAmplop,
-        start: 5.7,
-        end: 7,
-        width: 1080, // full width
-        y: "main_h-overlay_h",
-        animation: {
-          in: { type: "fade", duration: 0.1 },
-          hold: 3,
         },
       },
     ],
